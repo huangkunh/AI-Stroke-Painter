@@ -143,16 +143,20 @@ def transform(actions: List[Dict[str, float]],
         n_pts = stroke_point_count(x0, y0, x1, y1, radius)
         pts = interpolate_stroke(x0, y0, x1, y1, n_pts)
 
-        # Build the flat point array. For brush 0 (marker) the engine reads
-        # 2 values per point; for brush 5 (压感v3) it reads 3 (x, y, p).
-        # We always emit 3 values per point; brush 0 simply ignores the
-        # trailing pressure value (the engine slices by the brush's stride).
+        # Build the flat point array. The engine's brush 0 (马克笔) reads
+        # 2 values per point (x, y); brush 5 (压感v3) reads 3 (x, y, pressure).
+        # We must match the stride or the brush misinterprets the data.
         flat: List[float] = [brush_id]
         for (px, py, t) in pts:
-            p = bell_pressure(t) * PRESSURE_SCALE  # 0..8
-            flat.extend([round(px * ENGINE_W, 2),
-                         round(py * ENGINE_H, 2),
-                         round(p, 4)])
+            if brush_id == 5:
+                p = bell_pressure(t) * PRESSURE_SCALE  # 0..8
+                flat.extend([round(px * ENGINE_W, 2),
+                             round(py * ENGINE_H, 2),
+                             round(p, 4)])
+            else:
+                # brush 0: no pressure, just x, y
+                flat.extend([round(px * ENGINE_W, 2),
+                             round(py * ENGINE_H, 2)])
         instructions.append(["line"] + flat)
 
     return instructions
