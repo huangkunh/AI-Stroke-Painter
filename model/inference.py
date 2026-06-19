@@ -30,6 +30,7 @@ Output: a JSON file `raw_strokes.json` containing a list of action dicts.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -46,6 +47,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ---------------------------------------------------------------------------
 # Common helpers
 # ---------------------------------------------------------------------------
+
+# Minimum acceptable size for the pretrained weights file (500 KB).
+# Real Learning-to-Paint actor weights are several MB; anything smaller is
+# almost certainly a truncated / error-page download.
+MIN_WEIGHTS_BYTES = 500_000
+
+# Optional expected SHA256 of actor_final.pth. When the upstream release
+# rotates the file, set this to the new hash to enforce integrity. Leave as
+# None to skip hash verification (size check still applies).
+EXPECTED_SHA256 = None
+
 
 def load_image(path: str, size: int = 512) -> np.ndarray:
     """Load an image and resize it to (size, size, 3) float32 in [0, 1]."""
@@ -70,6 +82,47 @@ def action_dict(x0, y0, x1, y1, r, g, b, a, radius) -> Dict:
     }
 
 
+def verify_weights(weights_path: str) -> bool:
+    """Verify a pretrained weights file is intact.
+
+    Checks (in order):
+      1. File exists.
+      2. File size >= MIN_WEIGHTS_BYTES.
+      3. (Optional) SHA256 matches EXPECTED_SHA256 when that constant is set.
+
+    Returns True if the file passes all checks, False otherwise. Prints a
+    descriptive WARNING line for each failed check so the caller can report
+    the reason to the user.
+    """
+    if not os.path.isfile(weights_path):
+        print(f"[inference][rl] WARNING: weights file not found: {weights_path}")
+        return False
+
+    size = os.path.getsize(weights_path)
+    if size < MIN_WEIGHTS_BYTES:
+        print(f"[inference][rl] WARNING: weights file too small "
+              f"({size} bytes < {MIN_WEIGHTS_BYTES} expected).")
+        print(f"[inference][rl] WARNING: the download may be truncated or "
+              f"an error page. Re-run `bash model/download_weights.sh`.")
+        return False
+
+    if EXPECTED_SHA256 is not None:
+        h = hashlib.sha256()
+        with open(weights_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        actual = h.hexdigest()
+        if actual.lower() != EXPECTED_SHA256.lower():
+            print(f"[inference][rl] WARNING: SHA256 mismatch.")
+            print(f"[inference][rl] WARNING:   expected: {EXPECTED_SHA256}")
+            print(f"[inference][rl] WARNING:   actual:   {actual}")
+            print(f"[inference][rl] WARNING: the file may be corrupted or "
+                  f"replaced. Re-download or update EXPECTED_SHA256.")
+            return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # RL backend (Learning-to-Paint)
 # ---------------------------------------------------------------------------
@@ -91,9 +144,8 @@ def run_rl_inference(image: np.ndarray, weights_path: str, max_steps: int,
         print(f"[inference][rl] WARNING: falling back to lite mode.")
         return run_lite_inference(image, max_steps=max_steps)
 
-    # --- 2. weights file existence --------------------------------------
-    if not os.path.isfile(weights_path):
-        print(f"[inference][rl] WARNING: weights not found at {weights_path}.")
+    # --- 2. weights file existence + integrity --------------------------
+    if not verify_weights(weights_path):
         print(f"[inference][rl] WARNING: run `bash model/download_weights.sh` first,")
         print(f"[inference][rl] WARNING: or use --mode lite for a quick demo.")
         print(f"[inference][rl] WARNING: falling back to lite mode.")
