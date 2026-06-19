@@ -106,13 +106,136 @@ def stroke_point_count(x0: float, y0: float, x1: float, y1: float,
 
 
 # ---------------------------------------------------------------------------
+# Stroke deduplication & merging (performance optimisation)
+# ---------------------------------------------------------------------------
+
+# Thresholds for considering two strokes "similar enough" to merge/drop.
+# All coordinates are normalised to 0..1, so 0.01 = ~6px on a 640px canvas.
+DEDUP_POS_THRESHOLD = 0.015   # ~10px positional difference
+DEDUP_COLOR_THRESHOLD = 0.04  # ~10/255 per channel
+DEDUP_RADIUS_THRESHOLD = 1.5  # px
+
+
+def _stroke_signature(a: Dict[str, float]) -> tuple:
+    """A hashable signature capturing a stroke's geometric + colour identity.
+
+    Two strokes with the same signature are candidates for deduplication.
+    We quantise the coordinates to a coarse grid so that strokes that are
+    "almost the same" still collide.
+    """
+    # Quantise start/end to a 64x64 grid (0..1 -> 0..63)
+    gx0 = int(a["x_start"] * 63)
+    gy0 = int(a["y_start"] * 63)
+    gx1 = int(a["x_end"] * 63)
+    gy1 = int(a["y_end"] * 63)
+    # Quantise colour to 16 levels per channel
+    cr = int(a["color_r"] * 15)
+    cg = int(a["color_g"] * 15)
+    cb = int(a["color_b"] * 15)
+    # Quantise radius to nearest 2px
+    rr = int(a["brush_radius"] / 2)
+    return (gx0, gy0, gx1, gy1, cr, cg, cb, rr)
+
+
+def _strokes_similar(a: Dict[str, float], b: Dict[str, float]) -> bool:
+    """Fine-grained similarity check (used after signature collision)."""
+    dx0 = abs(a["x_start"] - b["x_start"])
+    dy0 = abs(a["y_start"] - b["y_start"])
+    dx1 = abs(a["x_end"] - b["x_end"])
+    dy1 = abs(a["y_end"] - b["y_end"])
+    if max(dx0, dy0, dx1, dy1) > DEDUP_POS_THRESHOLD:
+        return False
+    dr = abs(a["color_r"] - b["color_r"])
+    dg = abs(a["color_g"] - b["color_g"])
+    db = abs(a["color_b"] - b["color_b"])
+    if max(dr, dg, db) > DEDUP_COLOR_THRESHOLD:
+        return False
+    if abs(a["brush_radius"] - b["brush_radius"]) > DEDUP_RADIUS_THRESHOLD:
+        return False
+    return True
+
+
+def deduplicate_strokes(actions: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    """Remove near-duplicate strokes and merge collinear same-colour strokes.
+
+    Two strategies:
+      1. Exact-ish dedup: drop a stroke if a very similar stroke (same
+         quantised position + colour + radius) already exists.
+      2. Chain merging: if stroke B starts where stroke A ended and they
+         share colour + radius, merge B into A (extend A's endpoint to B's
+         endpoint) and drop B. This reduces stroke count for long curves
+         that the model painted as many small segments.
+
+    Returns a new list; the input is not mutated.
+    """
+    if len(actions) <= 1:
+        return list(actions)
+
+    seen_sigs: dict = {}
+    deduped: List[Dict[str, float]] = []
+
+    for a in actions:
+        sig = _stroke_signature(a)
+        # Strategy 1: exact-ish dedup
+        is_dup = False
+        if sig in seen_sigs:
+            for idx in seen_sigs[sig]:
+                if _strokes_similar(deduped[idx], a):
+                    is_dup = True
+                    break
+        if is_dup:
+            continue
+
+        # Strategy 2: chain merge — does the previous stroke end where this
+        # one starts, with matching colour + radius?
+        if deduped:
+            prev = deduped[-1]
+            if (abs(prev["x_end"] - a["x_start"]) < DEDUP_POS_THRESHOLD and
+                abs(prev["y_end"] - a["y_start"]) < DEDUP_POS_THRESHOLD and
+                abs(prev["color_r"] - a["color_r"]) < DEDUP_COLOR_THRESHOLD and
+                abs(prev["color_g"] - a["color_g"]) < DEDUP_COLOR_THRESHOLD and
+                abs(prev["color_b"] - a["color_b"]) < DEDUP_COLOR_THRESHOLD and
+                abs(prev["brush_radius"] - a["brush_radius"]) < DEDUP_RADIUS_THRESHOLD):
+                # Merge: extend prev's endpoint to a's endpoint
+                prev = dict(prev)  # copy to avoid mutating deduped entry
+                prev["x_end"] = a["x_end"]
+                prev["y_end"] = a["y_end"]
+                deduped[-1] = prev
+                continue
+
+        # Keep this stroke
+        seen_sigs.setdefault(sig, []).append(len(deduped))
+        deduped.append(a)
+
+    return deduped
+
+
+# ---------------------------------------------------------------------------
 # Core transform
 # ---------------------------------------------------------------------------
 
 def transform(actions: List[Dict[str, float]],
               background: str = DEFAULT_BACKGROUND,
-              start_with_background: bool = True) -> List[List[Any]]:
-    """Convert raw model actions into the engine's flat instruction stream."""
+              start_with_background: bool = True,
+              dedup: bool = False) -> List[List[Any]]:
+    """Convert raw model actions into the engine's flat instruction stream.
+
+    Parameters
+    ----------
+    actions : list of action dicts (from model/inference.py)
+    background : hex colour string for the leading background instruction
+    start_with_background : if True, emit a leading ["background", ...] op
+    dedup : if True, run stroke deduplication + chain merging before
+            converting. This reduces the instruction count (faster
+            rendering) without changing the output JSON format.
+    """
+    if dedup:
+        original_count = len(actions)
+        actions = deduplicate_strokes(actions)
+        if len(actions) < original_count:
+            print(f"[transform] dedup: {original_count} -> {len(actions)} strokes "
+                  f"({original_count - len(actions)} removed)")
+
     instructions: List[List[Any]] = []
 
     if start_with_background:
@@ -176,6 +299,9 @@ def main():
                     help="Background colour, e.g. #f8ecdb.")
     ap.add_argument("--no-background", action="store_true",
                     help="Do not emit a leading background instruction.")
+    ap.add_argument("--dedup", action="store_true",
+                    help="Enable stroke deduplication + chain merging "
+                         "(reduces instruction count, faster rendering).")
     args = ap.parse_args()
 
     with open(args.input, "r", encoding="utf-8") as f:
@@ -186,6 +312,7 @@ def main():
         actions,
         background=args.background,
         start_with_background=not args.no_background,
+        dedup=args.dedup,
     )
 
     with open(args.output, "w", encoding="utf-8") as f:

@@ -197,5 +197,58 @@
       step();
     });
   };
+
+  // ---- Offscreen pre-rendering API (performance optimisation) -------------
+  // renderToOffscreen(jsonData, options) -> { canvas, ctx, strokes }
+  //
+  // Renders the ENTIRE instruction stream to an offscreen canvas in one
+  // synchronous pass (no animation). The returned canvas can then be
+  // drawImage()'d onto a visible canvas in a single GPU-accelerated blit,
+  // which is much faster than replaying thousands of brush strokes every
+  // frame. Used by index.html to cache completed strokes while the user
+  // scrubs or steps forward.
+  //
+  // options:
+  //   background: fill colour (default transparent)
+  //   devicePixelRatio: number (default 1)
+  //   onProgress: (done, total) => void  (called synchronously)
+  globalThis.renderToOffscreen = function renderToOffscreen(jsonData, options) {
+    options = options || {};
+    var W = globalThis.__paintEngine.WIDTH;
+    var H = globalThis.__paintEngine.HEIGHT;
+    var dpr = options.devicePixelRatio || 1;
+
+    var off = document.createElement('canvas');
+    off.width = W * dpr;
+    off.height = H * dpr;
+    var offCtx = off.getContext('2d');
+    offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    offCtx.lineCap = 'round';
+    offCtx.lineJoin = 'round';
+    offCtx.strokeStyle = '#222222';
+    offCtx.lineWidth = 4;
+
+    if (options.background) {
+      offCtx.save();
+      offCtx.globalCompositeOperation = 'source-over';
+      offCtx.globalAlpha = 1;
+      offCtx.fillStyle = options.background;
+      offCtx.fillRect(0, 0, W, H);
+      offCtx.restore();
+    }
+
+    var state = globalThis.__paintEngine.cloneState(globalThis.__paintEngine.defaultState);
+    var total = jsonData.length;
+    var onProgress = options.onProgress || function () {};
+
+    for (var i = 0; i < total; i++) {
+      try { applyInstruction(offCtx, state, jsonData[i], dpr); }
+      catch (err) { console.warn('[engine:offscreen] skip instruction', i, err); }
+      if (i % 200 === 0) onProgress(i, total);
+    }
+    onProgress(total, total);
+
+    return { canvas: off, ctx: offCtx, strokes: total };
+  };
 }()
 

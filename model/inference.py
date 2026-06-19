@@ -269,10 +269,90 @@ def _edge_strokes(target: np.ndarray, edges: np.ndarray, n_strokes: int,
     return actions
 
 
+# ---------------------------------------------------------------------------
+# Image-type classification (photo / sketch / illustration)
+# ---------------------------------------------------------------------------
+
+def classify_image(image: np.ndarray) -> tuple:
+    """Classify an image as 'photo', 'sketch', or 'illustration'.
+
+    Uses simple, fast heuristics based on colour saturation and edge density:
+      - sketch:       low saturation (mostly grey/white) + high edge density
+      - illustration: high saturation + few unique colours (flat regions)
+      - photo:        everything else (natural colour distribution)
+
+    Returns (type_name, strategy_dict) where strategy_dict tunes the lite
+    painter's pass budgets and stroke parameters for the detected type.
+    """
+    h, w, _ = image.shape
+    # Work on a small downsampled version for speed
+    scale = 64.0 / max(h, w)
+    small = cv2.resize(image, (max(1, int(w * scale)), max(1, int(h * scale))),
+                       interpolation=cv2.INTER_AREA)
+
+    # Saturation: convert to HSV, measure mean S
+    hsv = cv2.cvtColor((small * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
+    mean_sat = float(hsv[:, :, 1].mean()) / 255.0
+    mean_val = float(hsv[:, :, 2].mean()) / 255.0
+
+    # Edge density: Canny on grayscale
+    gray = cv2.cvtColor((small * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, 80, 160)
+    edge_density = float(edges.sum() / 255.0) / (gray.shape[0] * gray.shape[1])
+
+    # Colour uniqueness: count distinct quantised colours
+    quantised = (small * 15).astype(np.uint8)  # 16 levels per channel
+    flat = quantised.reshape(-1, 3)
+    unique_colours = len(set(map(tuple, flat[::7])))  # sample every 7th pixel
+
+    # Classification rules
+    if mean_sat < 0.15 and edge_density > 0.08:
+        img_type = "sketch"
+    elif mean_sat > 0.35 and unique_colours < 80:
+        img_type = "illustration"
+    else:
+        img_type = "photo"
+
+    # Strategy per type
+    strategies = {
+        "photo": {
+            "name": "balanced",
+            "block_frac": 0.45, "block_radius": 14.0, "block_alpha": 0.55,
+            "mid_frac": 0.30,   "mid_radius": 5.0,   "mid_alpha": 0.75,
+            "fine_radius": 1.8,  "fine_alpha": 0.90,
+        },
+        "sketch": {
+            "name": "edge-focused",
+            "block_frac": 0.0,   # no colour blocking for sketches
+            "block_radius": 8.0, "block_alpha": 0.4,
+            "mid_frac": 0.45,    "mid_radius": 3.0,   "mid_alpha": 0.85,
+            "fine_radius": 1.2,  "fine_alpha": 0.95,
+        },
+        "illustration": {
+            "name": "colour-focused",
+            "block_frac": 0.60,  "block_radius": 16.0, "block_alpha": 0.60,
+            "mid_frac": 0.25,    "mid_radius": 6.0,   "mid_alpha": 0.70,
+            "fine_radius": 2.5,  "fine_alpha": 0.85,
+        },
+    }
+    return img_type, strategies[img_type]
+
+
 def run_lite_inference(image: np.ndarray, max_steps: int = 600) -> List[Dict]:
-    """Heuristic, deterministic painter. See module docstring."""
+    """Heuristic, deterministic painter. See module docstring.
+
+    Automatically detects the image type (photo / sketch / illustration) and
+    adjusts the stroke strategy accordingly:
+      - photo:        balanced 3-pass strategy (block + mid + fine)
+      - sketch:       skip colour blocking, emphasise fine edge strokes
+      - illustration: stronger colour blocking, fewer fine details
+    """
     rng = np.random.default_rng(42)
     h, w, _ = image.shape
+
+    # 0) image-type detection -> strategy tuning
+    img_type, strategy = classify_image(image)
+    print(f"[inference][lite] image type: {img_type} -> strategy: {strategy['name']}")
 
     # 1) colour quantisation
     quant, palette = _quantize(image, k=8)
@@ -293,28 +373,34 @@ def run_lite_inference(image: np.ndarray, max_steps: int = 600) -> List[Dict]:
     actions: List[Dict] = []
 
     # 3) PASS 1 - broad colour blocking (large radius, low alpha)
-    block_budget = max(0, int(max_steps * 0.45))
-    per_region = max(8, block_budget // max(1, len(masks)))
-    for color, mask in masks:
-        r, g, b = color
-        actions.extend(_sample_strokes_in_region(
-            mask, image, per_region, radius=14.0, alpha=0.55, rng=rng))
+    #    Skipped entirely for sketches (they have little colour to block).
+    block_budget = max(0, int(max_steps * strategy["block_frac"]))
+    if block_budget > 0 and masks:
+        per_region = max(8, block_budget // max(1, len(masks)))
+        for color, mask in masks:
+            r, g, b = color
+            actions.extend(_sample_strokes_in_region(
+                mask, image, per_region,
+                radius=strategy["block_radius"],
+                alpha=strategy["block_alpha"], rng=rng))
     print(f"[inference][lite] pass 1 (colour block): {len(actions)} strokes")
 
     # 4) PASS 2 - mid-frequency strokes guided by region edges
     gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
     edges_mid = cv2.Canny(gray, 60, 140)
     edges_mid = cv2.dilate(edges_mid, np.ones((2, 2), np.uint8))
-    mid_budget = max(0, int(max_steps * 0.30))
+    mid_budget = max(0, int(max_steps * strategy["mid_frac"]))
     actions.extend(_edge_strokes(image, edges_mid, mid_budget,
-                                 radius=5.0, alpha=0.75, rng=rng))
+                                 radius=strategy["mid_radius"],
+                                 alpha=strategy["mid_alpha"], rng=rng))
     print(f"[inference][lite] pass 2 (mid edges):   {len(actions)} strokes total")
 
     # 5) PASS 3 - fine detail along strong gradients
     edges_fine = cv2.Canny(gray, 120, 240)
     fine_budget = max(0, max_steps - len(actions))
     actions.extend(_edge_strokes(image, edges_fine, fine_budget,
-                                 radius=1.8, alpha=0.9, rng=rng))
+                                 radius=strategy["fine_radius"],
+                                 alpha=strategy["fine_alpha"], rng=rng))
     print(f"[inference][lite] pass 3 (fine detail): {len(actions)} strokes total")
 
     return actions
