@@ -1,0 +1,50 @@
+# Docker ignore - exclude these from the Docker build context
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Model weights (downloaded inside the container)
+model/pretrained/
+
+# Generated outputs
+output/
+raw_strokes.json
+output_strokes.json
+*.npy
+
+# Node
+node_modules/
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Docs (not needed in runtime image)
+docs/
+*.md
+!README.md
