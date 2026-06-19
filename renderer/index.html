@@ -347,6 +347,24 @@
         }
       }
 
+      // ---- Step forward to a specific index (used by tests / seek bar) ----
+      function stepToIndex(targetIdx) {
+        if (instructions.length === 0) return;
+        pausePlayback();
+        targetIdx = Math.max(0, Math.min(targetIdx, instructions.length));
+        if (targetIdx < currentIdx) {
+          // Need to go backwards: reset and replay from start
+          clearCanvas();
+          initEngineState();
+          currentIdx = 0;
+        }
+        while (currentIdx < targetIdx) {
+          applyOne(currentIdx);
+          currentIdx++;
+        }
+        updateStatus(currentIdx >= instructions.length ? 'Done' : 'Seeked');
+      }
+
       // ---- Reset to blank canvas ----
       function doReset() {
         stopPlayback();
@@ -425,6 +443,19 @@
       clearCanvas();
       initEngineState();
       updateStatus('Idle — load a JSON file to begin');
+
+      // ---- Expose API for testing / console debugging ----
+      // These are safe to call from the browser console or Playwright tests.
+      window.__player = {
+        loadJSON: loadJSON,
+        play: startPlayback,
+        pause: pausePlayback,
+        step: stepForward,
+        reset: doReset,
+        exportPNG: exportPNG,
+        stepToIndex: stepToIndex,
+        getState: () => ({ currentIdx, total: instructions.length, isPlaying }),
+      };
     })();
   </script>
 </body>
