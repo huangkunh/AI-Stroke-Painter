@@ -23,74 +23,87 @@
       background: linear-gradient(135deg, #667eea, #764ba2);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
-    .toolbar {
-      display: flex;
-      gap: 12px;
-      align-items: center;
+
+    /* ---- Canvas wrapper ---- */
+    .canvas-wrapper {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
       margin-bottom: 20px;
+    }
+    canvas { display: block; background: #f8ecdb; }
+
+    /* ---- Progress bar (overlay on top of canvas) ---- */
+    .progress-overlay {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.1s linear;
+    }
+
+    /* ---- Control panel ---- */
+    .control-panel {
+      background: #16213e;
+      border: 1px solid #2d2d44;
+      border-radius: 12px;
+      padding: 20px 24px;
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .control-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
       flex-wrap: wrap;
       justify-content: center;
     }
     .btn {
-      padding: 10px 20px;
+      padding: 10px 18px;
       border: none;
       border-radius: 8px;
       font-size: 14px;
       cursor: pointer;
       transition: all 0.2s;
       font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 44px;
+      justify-content: center;
     }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .btn-primary {
       background: linear-gradient(135deg, #667eea, #764ba2);
       color: white;
     }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
     .btn-secondary { background: #2d2d44; color: #e0e0e0; }
-    .btn-secondary:hover { background: #3d3d54; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    .file-label {
-      padding: 10px 20px;
-      background: #2d2d44;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.2s;
+    .btn-secondary:hover:not(:disabled) { background: #3d3d54; }
+    .btn-success {
+      background: linear-gradient(135deg, #11998e, #38ef7d);
+      color: white;
     }
-    .file-label:hover { background: #3d3d54; }
-    .file-label input { display: none; }
-    .canvas-wrap {
-      position: relative;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    .btn-success:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
     }
-    canvas {
-      display: block;
-      background: #f8ecdb;
-    }
-    .progress-bar {
-      width: 640px;
-      height: 6px;
-      background: #2d2d44;
-      border-radius: 3px;
-      margin-top: 16px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-      width: 0%;
-      transition: width 0.1s;
-    }
-    .info {
-      margin-top: 12px;
-      font-size: 13px;
-      color: #888;
-      text-align: center;
-    }
+
     .speed-control {
       display: flex;
       align-items: center;
@@ -98,118 +111,321 @@
       font-size: 13px;
       color: #aaa;
     }
-    .speed-control input { width: 100px; }
-    .reference {
-      margin-top: 20px;
-      display: flex;
-      gap: 20px;
-      align-items: flex-start;
+    .speed-control select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #2d2d44;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
     }
-    .reference img {
-      max-width: 200px;
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    .speed-control select:focus { outline: 2px solid #667eea; }
+
+    /* ---- Status display ---- */
+    #status {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 14px;
+      color: #76d7ea;
+      text-align: center;
+      padding: 8px 12px;
+      background: #0d1117;
+      border-radius: 6px;
+      border: 1px solid #1e2a3a;
+      letter-spacing: 0.5px;
     }
-    .reference .label { font-size: 12px; color: #666; margin-top: 4px; text-align: center; }
+
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+    }
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: 0; top: 0;
+      opacity: 0;
+      width: 100%; height: 100%;
+      cursor: pointer;
+    }
+    .hint { font-size: 12px; color: #666; text-align: center; }
   </style>
 </head>
 <body>
   <h1>AI Stroke Painter</h1>
-  <p class="subtitle">将图片转化为逐笔绘画时序，在 Canvas 上回放每一笔</p>
+  <p class="subtitle">将图片转化为逐笔绘画时序，在 Canvas 上回放</p>
 
-  <div class="toolbar">
-    <label class="file-label">
-      📁 加载 output_strokes.json
-      <input type="file" id="fileInput" accept=".json" />
-    </label>
-    <button class="btn btn-primary" id="playBtn" disabled>▶ 播放</button>
-    <button class="btn btn-secondary" id="pauseBtn" disabled>⏸ 暂停</button>
-    <button class="btn btn-secondary" id="resetBtn" disabled>↺ 重置</button>
-    <div class="speed-control">
-      速度
-      <input type="range" id="speedSlider" min="1" max="50" value="8" />
-      <span id="speedVal">8</span> 笔/帧
+  <!-- Canvas + progress overlay -->
+  <div class="canvas-wrapper">
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div class="progress-overlay">
+      <div class="progress-fill" id="progressFill"></div>
     </div>
   </div>
 
-  <div class="canvas-wrap">
-    <canvas id="canvas" width="640" height="480"></canvas>
+  <!-- Control panel -->
+  <div class="control-panel">
+    <!-- Status display -->
+    <div id="status">Progress: 0 / 0 (0.0%)  |  Idle</div>
+
+    <!-- Playback controls -->
+    <div class="control-row">
+      <button class="btn btn-primary" id="playPauseBtn" disabled>▶ 播放</button>
+      <button class="btn btn-secondary" id="stepBtn" disabled>⏭ 单步</button>
+      <button class="btn btn-secondary" id="resetBtn" disabled>⏮ 重置</button>
+      <div class="speed-control">
+        <label for="speedSelect">速度:</label>
+        <select id="speedSelect">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- File load + export -->
+    <div class="control-row">
+      <div class="file-input-wrapper">
+        <button class="btn btn-secondary">📁 加载 JSON</button>
+        <input type="file" id="fileInput" accept=".json,application/json" />
+      </div>
+      <button class="btn btn-success" id="exportBtn" disabled>💾 导出 PNG</button>
+    </div>
+
+    <p class="hint">提示: 先运行 model/inference.py 和 converter/transform.py 生成 output_strokes.json，然后点击「加载 JSON」</p>
   </div>
 
-  <div class="progress-bar">
-    <div class="progress-fill" id="progressFill"></div>
-  </div>
-  <div class="info" id="info">等待加载 JSON 文件…</div>
-
+  <!-- Engine (exposes globalThis.renderPainting and globalThis.__paintEngine) -->
   <script src="engine.js"></script>
   <script>
-    const canvas = document.getElementById('canvas');
-    const fileInput = document.getElementById('fileInput');
-    const playBtn = document.getElementById('playBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    const speedSlider = document.getElementById('speedSlider');
-    const speedVal = document.getElementById('speedVal');
-    const progressFill = document.getElementById('progressFill');
-    const info = document.getElementById('info');
+    (function () {
+      'use strict';
 
-    let jsonData = null;
-    let renderPromise = null;
-    let isPaused = false;
-    let pauseResolve = null;
+      // ---- DOM references ----
+      const canvas       = document.getElementById('canvas');
+      const ctx          = canvas.getContext('2d');
+      const playPauseBtn = document.getElementById('playPauseBtn');
+      const stepBtn      = document.getElementById('stepBtn');
+      const resetBtn     = document.getElementById('resetBtn');
+      const exportBtn    = document.getElementById('exportBtn');
+      const speedSelect  = document.getElementById('speedSelect');
+      const fileInput    = document.getElementById('fileInput');
+      const statusDiv    = document.getElementById('status');
+      const progressFill = document.getElementById('progressFill');
 
-    speedSlider.addEventListener('input', () => {
-      speedVal.textContent = speedSlider.value;
-    });
+      const BG_COLOR = '#f8ecdb';
 
-    fileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      info.textContent = '正在解析 JSON…';
-      try {
-        const text = await file.text();
-        jsonData = JSON.parse(text);
-        info.textContent = `已加载 ${jsonData.length} 条指令，点击「播放」开始逐笔回放`;
-        playBtn.disabled = false;
-        resetBtn.disabled = false;
-      } catch (err) {
-        info.textContent = 'JSON 解析失败: ' + err.message;
+      // ---- Player state ----
+      // We drive rendering manually via __paintEngine.applyInstruction so we
+      // can support play / pause / step / speed control. The engine's built-in
+      // renderPainting() runs autonomously and can't be paused mid-stream.
+      let instructions = [];       // the loaded JSON array
+      let currentIdx   = 0;        // next instruction to apply (0-based)
+      let engineState  = null;     // cloned brush state
+      let isPlaying    = false;    // whether the RAF loop is running
+      let rafId        = null;     // current requestAnimationFrame handle
+      let lastFrameTs  = 0;        // timestamp of last applied batch
+
+      // ---- Canvas helpers ----
+      function clearCanvas() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = BG_COLOR;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-    });
 
-    playBtn.addEventListener('click', async () => {
-      if (!jsonData) return;
-      playBtn.disabled = true;
-      pauseBtn.disabled = false;
-      isPaused = false;
-      const batch = parseInt(speedSlider.value);
-      const result = await renderPainting(jsonData, canvas, {
-        animate: true,
-        batch: batch,
-        background: '#f8ecdb',
-        onProgress: (done, total) => {
-          progressFill.style.width = (done / total * 100) + '%';
-          info.textContent = `逐笔绘制中… ${done} / ${total} 条指令`;
+      function initEngineState() {
+        // Clone the default brush state so each render session is independent.
+        engineState = globalThis.__paintEngine.cloneState(
+          globalThis.__paintEngine.defaultState
+        );
+      }
+
+      // ---- Apply a single instruction to the canvas ----
+      function applyOne(idx) {
+        if (idx < 0 || idx >= instructions.length) return;
+        const inst = instructions[idx];
+        try {
+          globalThis.__paintEngine.applyInstruction(ctx, engineState, inst, 1);
+        } catch (err) {
+          console.warn('[player] skip instruction', idx, err);
+        }
+      }
+
+      // ---- Update status display + progress bar ----
+      function updateStatus(label) {
+        const total = instructions.length;
+        const done  = currentIdx;
+        const pct   = total > 0 ? (done / total * 100).toFixed(1) : '0.0';
+        statusDiv.textContent =
+          `Progress: ${done} / ${total} (${pct}%)  |  ${label}`;
+        progressFill.style.width = (total > 0 ? done / total * 100 : 0) + '%';
+      }
+
+      // ---- Speed -> batch size mapping ----
+      // At 60fps, 1x = ~8 instructions/frame, 0.5x = 4, 2x = 16, 4x = 32.
+      // We also throttle 0.5x by skipping every other frame.
+      function getBatchSize() {
+        const speed = parseFloat(speedSelect.value);
+        return Math.max(1, Math.round(8 * speed));
+      }
+      function getFrameInterval(speed) {
+        // 0.5x -> apply every 120ms (skip frames), 1x+ -> every frame
+        return speed <= 0.5 ? 120 : 16;
+      }
+
+      // ---- Animation loop ----
+      function tick(ts) {
+        if (!isPlaying) return;
+        const speed    = parseFloat(speedSelect.value);
+        const interval = getFrameInterval(speed);
+        if (ts - lastFrameTs < interval) {
+          rafId = requestAnimationFrame(tick);
+          return;
+        }
+        lastFrameTs = ts;
+
+        const batch   = getBatchSize();
+        const end     = Math.min(currentIdx + batch, instructions.length);
+        for (; currentIdx < end; currentIdx++) {
+          applyOne(currentIdx);
+        }
+        updateStatus('Playing');
+
+        if (currentIdx >= instructions.length) {
+          // Reached the end
+          stopPlayback();
+          updateStatus('Done');
+          return;
+        }
+        rafId = requestAnimationFrame(tick);
+      }
+
+      function startPlayback() {
+        if (instructions.length === 0) return;
+        if (currentIdx >= instructions.length) {
+          // Already finished -> reset first
+          doReset();
+        }
+        isPlaying = true;
+        playPauseBtn.textContent = '⏸ 暂停';
+        stepBtn.disabled = true;
+        lastFrameTs = 0;
+        rafId = requestAnimationFrame(tick);
+        updateStatus('Playing');
+      }
+
+      function pausePlayback() {
+        isPlaying = false;
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        playPauseBtn.textContent = '▶ 播放';
+        stepBtn.disabled = instructions.length === 0;
+        updateStatus('Paused');
+      }
+
+      function stopPlayback() {
+        isPlaying = false;
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        playPauseBtn.textContent = '▶ 播放';
+        stepBtn.disabled = instructions.length === 0;
+      }
+
+      // ---- Single step (draw next instruction) ----
+      function stepForward() {
+        if (instructions.length === 0) return;
+        pausePlayback();
+        if (currentIdx < instructions.length) {
+          applyOne(currentIdx);
+          currentIdx++;
+          updateStatus(currentIdx >= instructions.length ? 'Done' : 'Stepped');
+        }
+      }
+
+      // ---- Reset to blank canvas ----
+      function doReset() {
+        stopPlayback();
+        clearCanvas();
+        initEngineState();
+        currentIdx = 0;
+        updateStatus('Reset');
+      }
+
+      // ---- Export current canvas as PNG ----
+      function exportPNG() {
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        link.download = `ai-stroke-painter_${ts}.png`;
+        link.href = dataUrl;
+        link.click();
+      }
+
+      // ---- Load JSON file ----
+      function loadJSON(file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) {
+              throw new Error('JSON root must be an array of instructions');
+            }
+            instructions = data;
+            doReset();
+            playPauseBtn.disabled = false;
+            stepBtn.disabled = false;
+            resetBtn.disabled = false;
+            exportBtn.disabled = false;
+            updateStatus(`Loaded ${instructions.length} instructions`);
+          } catch (err) {
+            alert('JSON 解析失败: ' + err.message);
+            updateStatus('Load error');
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      // ---- Event listeners ----
+      playPauseBtn.addEventListener('click', () => {
+        if (isPlaying) pausePlayback();
+        else startPlayback();
+      });
+      stepBtn.addEventListener('click', stepForward);
+      resetBtn.addEventListener('click', doReset);
+      exportBtn.addEventListener('click', exportPNG);
+      speedSelect.addEventListener('change', () => {
+        // If currently playing, the next tick will pick up the new speed.
+        updateStatus(isPlaying ? 'Playing' : (currentIdx > 0 ? 'Paused' : 'Idle'));
+      });
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) loadJSON(e.target.files[0]);
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (!playPauseBtn.disabled) playPauseBtn.click();
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          if (!stepBtn.disabled) stepBtn.click();
+        } else if (e.code === 'KeyR') {
+          e.preventDefault();
+          if (!resetBtn.disabled) resetBtn.click();
         }
       });
-      info.textContent = `绘制完成！共 ${result.strokes} 条指令`;
-      playBtn.disabled = false;
-      pauseBtn.disabled = true;
-    });
 
-    resetBtn.addEventListener('click', () => {
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#f8ecdb';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      progressFill.style.width = '0%';
-      info.textContent = `已重置，点击「播放」重新绘制 ${jsonData ? jsonData.length : 0} 条指令`;
-    });
-
-    // 初始化画布背景
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#f8ecdb';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // ---- Initialize ----
+      clearCanvas();
+      initEngineState();
+      updateStatus('Idle — load a JSON file to begin');
+    })();
   </script>
 </body>
 </html>
