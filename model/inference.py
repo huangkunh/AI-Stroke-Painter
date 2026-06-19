@@ -79,35 +79,47 @@ def run_rl_inference(image: np.ndarray, weights_path: str, max_steps: int,
     """Run the pretrained Agent for `max_steps` strokes.
 
     Falls back to the lite painter if torch or the weights are unavailable.
+    All failure paths print a clear ``[inference][rl] WARNING`` line so the
+    user always knows why RL mode was skipped.
     """
+    # --- 1. torch + network availability --------------------------------
     try:
         import torch
         from network import build_agent, build_renderer, decode_action, ACTION_DIM
     except Exception as e:  # pragma: no cover
-        print(f"[inference][rl] torch/network unavailable ({e}); falling back to lite mode.")
+        print(f"[inference][rl] WARNING: torch/network unavailable ({e}).")
+        print(f"[inference][rl] WARNING: falling back to lite mode.")
         return run_lite_inference(image, max_steps=max_steps)
 
+    # --- 2. weights file existence --------------------------------------
     if not os.path.isfile(weights_path):
-        print(f"[inference][rl] weights not found at {weights_path}; falling back to lite mode.")
+        print(f"[inference][rl] WARNING: weights not found at {weights_path}.")
+        print(f"[inference][rl] WARNING: run `bash model/download_weights.sh` first,")
+        print(f"[inference][rl] WARNING: or use --mode lite for a quick demo.")
+        print(f"[inference][rl] WARNING: falling back to lite mode.")
         return run_lite_inference(image, max_steps=max_steps)
 
-    device = torch.device(device)
-    agent = build_agent().to(device).eval()
-    renderer = build_renderer().to(device).eval()
-
-    sd = torch.load(weights_path, map_location=device)
-    if isinstance(sd, dict) and "state_dict" in sd:
-        sd = sd["state_dict"]
+    # --- 3. model construction + weight loading -------------------------
+    device_t = torch.device(device)
     try:
+        agent = build_agent().to(device_t).eval()
+        renderer = build_renderer().to(device_t).eval()
+
+        sd = torch.load(weights_path, map_location=device_t)
+        if isinstance(sd, dict) and "state_dict" in sd:
+            sd = sd["state_dict"]
         agent.load_state_dict(sd, strict=False)
-        print("[inference][rl] loaded agent weights (strict=False).")
+        print(f"[inference][rl] loaded agent weights from {weights_path}")
     except Exception as e:
-        print(f"[inference][rl] failed to load weights ({e}); falling back to lite mode.")
+        print(f"[inference][rl] WARNING: failed to load weights ({e}).")
+        print(f"[inference][rl] WARNING: the file may be corrupted or incompatible.")
+        print(f"[inference][rl] WARNING: falling back to lite mode.")
         return run_lite_inference(image, max_steps=max_steps)
 
-    target = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).to(device)
+    # --- 4. inference loop ----------------------------------------------
+    target = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).to(device_t)
     canvas = torch.zeros_like(target)
-    h = agent.init_hidden(1, device)
+    h = agent.init_hidden(1, device_t)
 
     actions: List[Dict] = []
     with torch.no_grad():
@@ -145,6 +157,8 @@ def _sample_strokes_in_region(mask: np.ndarray, target: np.ndarray,
     a few steps. This mimics how a human fills a colour block with a few
     sweeping brush motions.
     """
+    if n_strokes <= 0:
+        return []
     ys, xs = np.where(mask > 0)
     if len(xs) < 4:
         return []
@@ -175,6 +189,8 @@ def _sample_strokes_in_region(mask: np.ndarray, target: np.ndarray,
 def _edge_strokes(target: np.ndarray, edges: np.ndarray, n_strokes: int,
                   radius: float, alpha: float, rng: np.random.Generator) -> List[Dict]:
     """Short strokes along strong edges (detail pass)."""
+    if n_strokes <= 0:
+        return []
     ys, xs = np.where(edges > 0)
     if len(xs) < 4:
         return []
@@ -225,7 +241,7 @@ def run_lite_inference(image: np.ndarray, max_steps: int = 600) -> List[Dict]:
     actions: List[Dict] = []
 
     # 3) PASS 1 - broad colour blocking (large radius, low alpha)
-    block_budget = int(max_steps * 0.45)
+    block_budget = max(0, int(max_steps * 0.45))
     per_region = max(8, block_budget // max(1, len(masks)))
     for color, mask in masks:
         r, g, b = color
@@ -237,14 +253,14 @@ def run_lite_inference(image: np.ndarray, max_steps: int = 600) -> List[Dict]:
     gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
     edges_mid = cv2.Canny(gray, 60, 140)
     edges_mid = cv2.dilate(edges_mid, np.ones((2, 2), np.uint8))
-    mid_budget = int(max_steps * 0.30)
+    mid_budget = max(0, int(max_steps * 0.30))
     actions.extend(_edge_strokes(image, edges_mid, mid_budget,
                                  radius=5.0, alpha=0.75, rng=rng))
     print(f"[inference][lite] pass 2 (mid edges):   {len(actions)} strokes total")
 
     # 5) PASS 3 - fine detail along strong gradients
     edges_fine = cv2.Canny(gray, 120, 240)
-    fine_budget = max_steps - len(actions)
+    fine_budget = max(0, max_steps - len(actions))
     actions.extend(_edge_strokes(image, edges_fine, fine_budget,
                                  radius=1.8, alpha=0.9, rng=rng))
     print(f"[inference][lite] pass 3 (fine detail): {len(actions)} strokes total")
@@ -285,13 +301,23 @@ def main():
             if os.path.isfile(args.weights):
                 mode = "rl"
             else:
+                print(f"[inference] auto: weights not found at {args.weights}, using lite mode.")
                 mode = "lite"
         except Exception:
+            print("[inference] auto: torch not installed, using lite mode.")
             mode = "lite"
     print(f"[inference] backend: {mode}")
 
+    # Run inference. If RL mode fails at ANY point (weights, model build,
+    # inference loop), fall back to lite mode so the pipeline never breaks.
+    actions: List[Dict]
     if mode == "rl":
-        actions = run_rl_inference(image, args.weights, args.max_steps, args.device)
+        try:
+            actions = run_rl_inference(image, args.weights, args.max_steps, args.device)
+        except Exception as e:
+            print(f"[inference] WARNING: RL inference raised an unexpected error ({e}).")
+            print(f"[inference] WARNING: falling back to lite mode to keep the pipeline running.")
+            actions = run_lite_inference(image, max_steps=args.max_steps)
     else:
         actions = run_lite_inference(image, max_steps=args.max_steps)
 
