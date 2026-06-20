@@ -220,9 +220,19 @@ def _sample_strokes_in_region(mask: np.ndarray, target: np.ndarray,
     # far from the region boundary (avoids colour bleeding).
     dist = cv2.distanceTransform(mask, cv2.DIST_L2, 3)
     probs = dist.flatten().astype(np.float64) ** 2
-    probs /= probs.sum() + 1e-9
+    total = probs.sum()
+    if total < 1e-9:
+        # All-zero distance transform (degenerate mask); fall back to uniform
+        probs = np.ones(len(probs)) / len(probs)
+    else:
+        probs /= total
 
-    idxs = rng.choice(len(probs), size=min(n_strokes, len(probs)), replace=False, p=probs)
+    # Ensure we don't request more samples than there are non-zero entries
+    n_nonzero = int((probs > 0).sum())
+    n_pick = min(n_strokes, n_nonzero)
+    if n_pick <= 0:
+        return []
+    idxs = rng.choice(len(probs), size=n_pick, replace=False, p=probs)
     for flat_idx in idxs:
         sy, sx = divmod(int(flat_idx), w)
         # local colour
@@ -249,8 +259,16 @@ def _edge_strokes(target: np.ndarray, edges: np.ndarray, n_strokes: int,
     h, w = edges.shape
     # Sample the strongest edges preferentially.
     weights = edges[ys, xs].astype(np.float64) ** 2
-    weights /= weights.sum() + 1e-9
-    pick = rng.choice(len(xs), size=min(n_strokes, len(xs)), replace=False, p=weights)
+    total = weights.sum()
+    if total < 1e-9:
+        weights = np.ones(len(weights)) / len(weights)
+    else:
+        weights /= total
+    # Ensure we don't request more samples than available
+    n_pick = min(n_strokes, len(xs))
+    if n_pick <= 0:
+        return []
+    pick = rng.choice(len(xs), size=n_pick, replace=False, p=weights)
     actions: List[Dict] = []
     for i in pick:
         sx, sy = int(xs[i]), int(ys[i])

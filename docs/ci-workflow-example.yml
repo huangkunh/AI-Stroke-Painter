@@ -8,9 +8,9 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Job 1: Unit + integration + edge-case tests (Python)
+  # Job 1: Python unit + integration + edge-case + API tests
   # ---------------------------------------------------------------------------
-  test:
+  python-tests:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -45,8 +45,11 @@ jobs:
       - name: Run edge-case tests
         run: python -m unittest tests.test_edge_cases -v
 
+      - name: Run API tests
+        run: python -m unittest tests.test_api -v
+
   # ---------------------------------------------------------------------------
-  # Job 2: Performance tests (Python, only on Python 3.11 for speed)
+  # Job 2: Performance tests (only on Python 3.11)
   # ---------------------------------------------------------------------------
   performance:
     runs-on: ubuntu-latest
@@ -58,12 +61,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-perf-${{ hashFiles('**/requirements*.txt') }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -73,9 +70,9 @@ jobs:
         run: python -m unittest tests.test_performance -v
 
   # ---------------------------------------------------------------------------
-  # Job 3: JavaScript syntax check (engine.js, stroke-processor.js, etc.)
+  # Job 3: JavaScript syntax check + unit tests
   # ---------------------------------------------------------------------------
-  js-check:
+  js-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,15 +84,17 @@ jobs:
 
       - name: Check JS syntax
         run: |
-          for f in renderer/*.js api/*.js; do
-            echo "Checking $f..."
-            node --check "$f"
-          done
+          node --check renderer/engine.js
+          node --check renderer/stroke-processor.js
+          node --check renderer/player-enhancements.js
+
+      - name: Run JS unit tests
+        run: node tests/test-stroke-processor.js
 
   # ---------------------------------------------------------------------------
   # Job 4: API smoke test (CLI mode)
   # ---------------------------------------------------------------------------
-  api-test:
+  api-smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +120,12 @@ jobs:
           python api/transform.py --input /tmp/strokes.json --out /tmp/instructions.json
           test -f /tmp/instructions.json
           python -c "import json; d=json.load(open('/tmp/instructions.json')); assert 'instructions' in d; assert len(d['instructions']) > 0"
+
+      - name: Test pipeline API (CLI mode)
+        run: |
+          python api/pipeline.py --image assets/sample_landscape.png --mode lite --max-steps 30 --out /tmp/pipeline.json
+          test -f /tmp/pipeline.json
+          python -c "import json; d=json.load(open('/tmp/pipeline.json')); assert 'instructions' in d; assert 'stroke_count' in d"
 
       - name: Test transform API with dedup
         run: |
