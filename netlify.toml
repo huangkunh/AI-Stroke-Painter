@@ -24,6 +24,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/pipeline"
+  to = "/.netlify/functions/pipeline"
+  status = 200
+  force = true
+
 # Default route -> index.html
 [[redirects]]
   from = "/"

@@ -16,6 +16,10 @@
     {
       "src": "api/transform.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "api/pipeline.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -30,6 +34,10 @@
     {
       "src": "/api/transform",
       "dest": "/api/transform.py"
+    },
+    {
+      "src": "/api/pipeline",
+      "dest": "/api/pipeline.py"
     },
     {
       "src": "/(.*)",
