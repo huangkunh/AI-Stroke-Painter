@@ -272,19 +272,7 @@
     function spawn() {
       try {
         var w = new Worker(workerUrl);
-        w.onmessage = function (e) {
-          var slot = workers.indexOf(w);
-          busy[slot] = false;
-          var pending = queue.shift();
-          if (pending) {
-            busy[slot] = true;
-            w.postMessage(pending.msg);
-            pending.worker = w;
-            w._pending = pending;
-          }
-          // Resolve handled below in per-message handler
-        };
-        // Re-bind onmessage to resolve the correct pending promise
+        // Single onmessage handler: resolve the pending promise for this worker.
         w.onmessage = function (e) {
           var data = e.data;
           var pending = w._pending;
@@ -293,6 +281,15 @@
             busy[workers.indexOf(w)] = false;
             if (data.error) pending.reject(new Error(data.error));
             else pending.resolve(data.result);
+            dispatchNext();
+          }
+        };
+        w.onerror = function (err) {
+          var pending = w._pending;
+          if (pending) {
+            w._pending = null;
+            busy[workers.indexOf(w)] = false;
+            pending.reject(new Error(err.message || 'Worker error'));
             dispatchNext();
           }
         };
@@ -344,6 +341,43 @@
           instructions: instructions,
           segments: opts2.segments || 8,
           resampleCount: opts2.resampleCount || 0
+        });
+      },
+      // Parallel preprocessing: splits instructions into chunks, one per worker.
+      // Returns a merged { index: [points] } map. Faster than preprocess() for
+      // large instruction sets on multi-core devices.
+      preprocessParallel: function (instructions, opts2) {
+        opts2 = opts2 || {};
+        var segments = opts2.segments || 8;
+        var resampleCount = opts2.resampleCount || 0;
+        var n = instructions.length;
+        var numWorkers = workers.filter(function (w) { return w; }).length;
+        if (numWorkers === 0 || n === 0) {
+          return Promise.resolve({});
+        }
+        var chunkSize = Math.ceil(n / numWorkers);
+        var promises = [];
+        for (var w = 0; w < numWorkers; w++) {
+          var start = w * chunkSize;
+          var end = Math.min(start + chunkSize, n);
+          if (start >= end) break;
+          promises.push(submit('batch', {
+            instructions: instructions,
+            startIdx: start,
+            endIdx: end,
+            segments: segments,
+            resampleCount: resampleCount
+          }));
+        }
+        return Promise.all(promises).then(function (results) {
+          var merged = {};
+          for (var r = 0; r < results.length; r++) {
+            var batch = results[r];
+            for (var k in batch.results) {
+              merged[k] = batch.results[k];
+            }
+          }
+          return merged;
         });
       },
       terminate: function () {
@@ -504,17 +538,21 @@
       seekTo: function (targetIdx) {
         targetIdx = Math.max(0, Math.min(targetIdx, instructions.length));
         if (targetIdx < currentIdx) {
-          // Going backward: find nearest checkpoint, restore, replay forward
+          // Going backward: find nearest checkpoint BEFORE targetIdx,
+          // restore the image, then replay forward from checkpoint to target.
+          // State is NOT checkpointable, so we must rebuild it by replaying
+          // from 0 to the checkpoint index. This is still faster than a full
+          // replay from 0 to targetIdx when checkpoints are close.
           var cp = nearestCheckpointBefore(targetIdx);
-          if (cp > 0 && loadCheckpoint(cp)) {
-            currentIdx = cp;
-            // Re-init state by replaying from 0 to cp? State is not checkpointable,
-            // so for correctness we replay from 0. For pure visual scrubbing this
-            // is acceptable; for exact state we fall back to full replay.
+          if (cp > 0 && checkpoints[cp]) {
+            // Restore image from checkpoint
+            loadCheckpoint(cp);
+            // Rebuild state by replaying 0..cp (needed for correct brush state)
             initState();
             for (var i = 0; i < cp; i++) applyOne(i);
+            currentIdx = cp;
           } else {
-            // No checkpoint: full replay from start
+            // No checkpoint available: full replay from start
             resetCanvas();
             initState();
             currentIdx = 0;

@@ -161,6 +161,25 @@ self.onmessage = function (e) {
         }
         result[i] = smoothed;
       }
+    } else if (job === 'batch') {
+      // Process a sub-range of instructions (for parallel processing).
+      // payload: { instructions, startIdx, endIdx, segments, resampleCount }
+      // Returns: { startIdx, results: { index: [smoothed points], ... } }
+      result = { startIdx: payload.startIdx, results: {} };
+      var batchInstrs = payload.instructions;
+      var bStart = payload.startIdx || 0;
+      var bEnd = payload.endIdx || batchInstrs.length;
+      var bSegs = payload.segments || 8;
+      var bResample = payload.resampleCount || 0;
+      for (var bi = bStart; bi < bEnd; bi++) {
+        var bInst = batchInstrs[bi];
+        if (!Array.isArray(bInst) || bInst[0] !== 'line') continue;
+        var bPts = extractPoints(bInst);
+        if (bPts.length < 4) continue;
+        var bSmoothed = catmullRomSmooth(bPts, bSegs);
+        if (bResample > 0) bSmoothed = resamplePolyline(bSmoothed, bResample);
+        result.results[bi] = bSmoothed;
+      }
     } else {
       err = 'Unknown job: ' + job;
     }
