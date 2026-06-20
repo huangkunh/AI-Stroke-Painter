@@ -1,0 +1,60 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "name": "ai-stroke-painter",
+  "description": "AI Stroke Painter - image to stroke-by-stroke painting playback",
+  "public": true,
+  "builds": [
+    {
+      "src": "renderer/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/infer.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/transform.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/renderer/index.html"
+    },
+    {
+      "src": "/api/infer",
+      "dest": "/api/infer.py"
+    },
+    {
+      "src": "/api/transform",
+      "dest": "/api/transform.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "env": {
+    "ASP_DEFAULT_MAX_STEPS": "400",
+    "ASP_DEFAULT_MODE": "lite",
+    "ASP_DEFAULT_BACKGROUND": "#f8ecdb",
+    "ASP_API_KEY_REQUIRED": "false"
+  },
+  "headers": [
+    {
+      "source": "/renderer/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ]
+}

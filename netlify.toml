@@ -1,0 +1,51 @@
+# Netlify configuration for AI Stroke Painter
+# Deploys the renderer/ as a static site and api/ as serverless functions.
+
+[build]
+  publish = "renderer"
+  command = "echo 'No build step needed for static site'"
+
+# Serverless functions directory
+[functions]
+  directory = "api"
+  # Python runtime
+  node_bundler = "esbuild"
+
+# Redirects: API routes -> serverless functions
+[[redirects]]
+  from = "/api/infer"
+  to = "/.netlify/functions/infer"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/transform"
+  to = "/.netlify/functions/transform"
+  status = 200
+  force = true
+
+# Default route -> index.html
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+# CORS headers for API
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, X-API-Key"
+
+# Cache static assets
+[[headers]]
+  for = "/renderer/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+# Environment variables (set in Netlify dashboard or via CLI)
+# ASP_DEFAULT_MAX_STEPS = "400"
+# ASP_DEFAULT_MODE = "lite"
+# ASP_DEFAULT_BACKGROUND = "#f8ecdb"
+# ASP_API_KEY = "your-secret-key"

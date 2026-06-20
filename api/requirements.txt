@@ -1,0 +1,13 @@
+# Python dependencies for serverless API functions (api/infer.py, api/transform.py)
+# Used by Vercel (@vercel/python) and Netlify Functions.
+#
+# PyTorch is intentionally omitted here because it's very large (~800MB) and
+# most serverless platforms have deployment size limits. The API runs in
+# lite mode by default, which only needs numpy/opencv/pillow.
+#
+# To enable RL mode on a serverless platform with sufficient size budget,
+# add: torch torchvision
+
+numpy>=1.20
+pillow>=8.0
+opencv-python-headless>=4.5
