@@ -235,6 +235,8 @@
 
   <!-- Engine (exposes globalThis.renderPainting and globalThis.__paintEngine) -->
   <script src="engine.js"></script>
+  <!-- Player enhancements (highlight, navigator, shortcuts, brush preview, touch) -->
+  <script src="player-enhancements.js"></script>
   <script>
     (function () {
       'use strict';
@@ -584,6 +586,7 @@
         toggleGrid: toggleGrid,
         exportPNG: exportPNG,
         stepToIndex: stepToIndex,
+        getInstructions: () => instructions,
         getState: () => ({
           currentIdx,
           total: instructions.length,
