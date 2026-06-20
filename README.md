@@ -409,7 +409,9 @@ python -m http.server 8000
 - [基础使用教程](docs/tutorials/basic.md) — 从零开始完成第一次绘画
 - [高级功能教程](docs/tutorials/advanced.md) — 图片类型识别、去重、Worker池、虚拟滚动
 - [故障排除指南](docs/tutorials/troubleshooting.md) — 常见问题与解决方案
-- [REST API 指南](docs/api.md) — 云函数 API 完整文档
+- [REST API 指南](docs/api/rest.md) — 云函数 REST API 完整文档
+- [Python API 指南](docs/api/python.md) — Python API 使用指南
+- [JavaScript API 指南](docs/api/javascript.md) — JavaScript API 使用指南
 - [部署指南](docs/deployment.md) — 本地/Docker/云平台部署
 
 ### 示例图片库
@@ -422,6 +424,8 @@ python -m http.server 8000
 | `sample_mountains.png` | 风景 | illustration |
 | `sample_abstract.png` | 抽象 | illustration |
 | `sample_anime.png` | 动漫 | illustration |
+| `sample_bird.png` | 动物 | illustration |
+| `sample_flower.png` | 花卉 | illustration |
 | `sample_cat_lowres.png` | 低分辨率猫图 | photo |
 
 ---
