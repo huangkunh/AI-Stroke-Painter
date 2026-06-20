@@ -7,6 +7,9 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-optional-orange.svg)](https://pytorch.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/huangkunh/AI-Stroke-Painter/actions/workflows/ci.yml/badge.svg)](https://github.com/huangkunh/AI-Stroke-Painter/actions)
+
+> 🌐 **在线 Demo**: [https://ai-stroke-painter.vercel.app](https://ai-stroke-painter.vercel.app) （部署后可访问）
 
 ---
 
@@ -19,6 +22,7 @@
 - [API 文档](#api-文档)
 - [测试](#测试)
 - [部署](#部署)
+- [教程](#教程)
 - [FAQ](#faq)
 - [贡献](#贡献)
 - [致谢](#致谢)
@@ -397,6 +401,28 @@ python model/inference.py --image assets/sample_cat.jpg --mode lite
 python converter/transform.py --input raw_strokes.json --output output_strokes.json
 python -m http.server 8000
 ```
+
+---
+
+## 教程
+
+- [基础使用教程](docs/tutorials/basic.md) — 从零开始完成第一次绘画
+- [高级功能教程](docs/tutorials/advanced.md) — 图片类型识别、去重、Worker池、虚拟滚动
+- [故障排除指南](docs/tutorials/troubleshooting.md) — 常见问题与解决方案
+- [REST API 指南](docs/api.md) — 云函数 API 完整文档
+- [部署指南](docs/deployment.md) — 本地/Docker/云平台部署
+
+### 示例图片库
+
+`assets/samples/` 目录包含多种风格的测试图片：
+
+| 图片 | 风格 | 识别类型 |
+|------|------|----------|
+| `sample_portrait.png` | 人像 | photo |
+| `sample_mountains.png` | 风景 | illustration |
+| `sample_abstract.png` | 抽象 | illustration |
+| `sample_anime.png` | 动漫 | illustration |
+| `sample_cat_lowres.png` | 低分辨率猫图 | photo |
 
 ---
 
