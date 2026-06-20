@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Unit + integration + edge-case tests (Python)
+  # ---------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install opencv-python-headless numpy pillow
+
+      - name: Run unit tests
+        run: python -m unittest tests.test_transform -v
+
+      - name: Run integration tests
+        run: python -m unittest tests.test_integration -v
+
+      - name: Run edge-case tests
+        run: python -m unittest tests.test_edge_cases -v
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Performance tests (Python, only on Python 3.11 for speed)
+  # ---------------------------------------------------------------------------
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-perf-${{ hashFiles('**/requirements*.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install opencv-python-headless numpy pillow
+
+      - name: Run performance tests
+        run: python -m unittest tests.test_performance -v
+
+  # ---------------------------------------------------------------------------
+  # Job 3: JavaScript syntax check (engine.js, stroke-processor.js, etc.)
+  # ---------------------------------------------------------------------------
+  js-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JS syntax
+        run: |
+          for f in renderer/*.js api/*.js; do
+            echo "Checking $f..."
+            node --check "$f"
+          done
+
+  # ---------------------------------------------------------------------------
+  # Job 4: API smoke test (CLI mode)
+  # ---------------------------------------------------------------------------
+  api-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install opencv-python-headless numpy pillow
+
+      - name: Test infer API (CLI mode)
+        run: |
+          python api/infer.py --image assets/sample_landscape.png --mode lite --max-steps 30 --out /tmp/strokes.json
+          test -f /tmp/strokes.json
+          python -c "import json; d=json.load(open('/tmp/strokes.json')); assert 'strokes' in d; assert len(d['strokes']) > 0"
+
+      - name: Test transform API (CLI mode)
+        run: |
+          python api/transform.py --input /tmp/strokes.json --out /tmp/instructions.json
+          test -f /tmp/instructions.json
+          python -c "import json; d=json.load(open('/tmp/instructions.json')); assert 'instructions' in d; assert len(d['instructions']) > 0"
+
+      - name: Test transform API with dedup
+        run: |
+          python api/transform.py --input /tmp/strokes.json --dedup --out /tmp/instructions_dedup.json
+          python -c "import json; d=json.load(open('/tmp/instructions_dedup.json')); assert 'instructions' in d"
