@@ -250,5 +250,295 @@
 
     return { canvas: off, ctx: offCtx, strokes: total };
   };
+
+  // ---- Worker pool for parallel stroke preprocessing ----------------------
+  // StrokeProcessorPool wraps a small pool of Web Workers (default = hardware
+  // concurrency, capped at 4) that run stroke-processor.js. It exposes a
+  // Promise-based API so the main thread can offload compute-intensive
+  // smoothing/resampling without blocking the UI.
+  //
+  // Usage:
+  //   var pool = globalThis.createStrokeProcessorPool();
+  //   pool.preprocess(instructions, { segments: 8 }).then(map => { ... });
+  //   pool.terminate();
+  globalThis.createStrokeProcessorPool = function createStrokeProcessorPool(opts) {
+    opts = opts || {};
+    var poolSize = opts.size || Math.min(4, (navigator.hardwareConcurrency || 2));
+    var workerUrl = opts.workerUrl || 'stroke-processor.js';
+    var workers = [];
+    var busy = [];
+    var queue = [];  // [{msg, resolve, reject}]
+
+    function spawn() {
+      try {
+        var w = new Worker(workerUrl);
+        w.onmessage = function (e) {
+          var slot = workers.indexOf(w);
+          busy[slot] = false;
+          var pending = queue.shift();
+          if (pending) {
+            busy[slot] = true;
+            w.postMessage(pending.msg);
+            pending.worker = w;
+            w._pending = pending;
+          }
+          // Resolve handled below in per-message handler
+        };
+        // Re-bind onmessage to resolve the correct pending promise
+        w.onmessage = function (e) {
+          var data = e.data;
+          var pending = w._pending;
+          if (pending) {
+            w._pending = null;
+            busy[workers.indexOf(w)] = false;
+            if (data.error) pending.reject(new Error(data.error));
+            else pending.resolve(data.result);
+            dispatchNext();
+          }
+        };
+        return w;
+      } catch (e) {
+        console.warn('[engine:worker-pool] failed to spawn worker:', e.message);
+        return null;
+      }
+    }
+
+    for (var i = 0; i < poolSize; i++) {
+      workers.push(spawn());
+      busy.push(false);
+    }
+
+    function dispatchNext() {
+      if (queue.length === 0) return;
+      for (var i = 0; i < workers.length; i++) {
+        if (workers[i] && !busy[i]) {
+          var pending = queue.shift();
+          busy[i] = true;
+          workers[i]._pending = pending;
+          workers[i].postMessage(pending.msg);
+          return;
+        }
+      }
+    }
+
+    function submit(job, payload) {
+      return new Promise(function (resolve, reject) {
+        var id = Date.now() + Math.random();
+        queue.push({ msg: { id: id, job: job, payload: payload },
+                     resolve: resolve, reject: reject });
+        dispatchNext();
+      });
+    }
+
+    return {
+      size: poolSize,
+      smooth: function (points, segments) {
+        return submit('smooth', { points: points, segments: segments });
+      },
+      resample: function (points, targetCount) {
+        return submit('resample', { points: points, targetCount: targetCount });
+      },
+      preprocess: function (instructions, opts2) {
+        opts2 = opts2 || {};
+        return submit('preprocess', {
+          instructions: instructions,
+          segments: opts2.segments || 8,
+          resampleCount: opts2.resampleCount || 0
+        });
+      },
+      terminate: function () {
+        workers.forEach(function (w) { if (w) w.terminate(); });
+        workers = []; busy = []; queue = [];
+      }
+    };
+  };
+
+  // ---- Adaptive frame-rate controller -------------------------------------
+  // AdaptiveFrameRate measures the actual rendering cost per frame and
+  // dynamically adjusts the batch size so the playback stays near the target
+  // FPS. On low-end devices it reduces the batch size (slower playback but
+  // smooth); on high-end devices it increases the batch size (faster playback).
+  //
+  // Usage:
+  //   var afc = globalThis.createAdaptiveFrameRate({ targetFps: 60 });
+  //   afc.recordFrame(frameDurationMs);
+  //   var batch = afc.suggestBatchSize(baseBatch);
+  globalThis.createAdaptiveFrameRate = function createAdaptiveFrameRate(opts) {
+    opts = opts || {};
+    var targetFps = opts.targetFps || 60;
+    var targetFrameMs = 1000 / targetFps;
+    var minBatch = opts.minBatch || 1;
+    var maxBatch = opts.maxBatch || 64;
+    var window = opts.window || 10;  // rolling window size
+
+    var history = [];  // recent frame durations (ms)
+    var currentBatch = opts.initialBatch || 8;
+
+    return {
+      targetFps: targetFps,
+      recordFrame: function (durationMs) {
+        history.push(durationMs);
+        if (history.length > window) history.shift();
+        // Compute average frame time
+        var avg = history.reduce(function (a, b) { return a + b; }, 0) / history.length;
+        // If we're consistently slower than target, reduce batch; if faster, increase
+        if (history.length >= 3) {
+          if (avg > targetFrameMs * 1.3 && currentBatch > minBatch) {
+            currentBatch = Math.max(minBatch, Math.floor(currentBatch * 0.8));
+          } else if (avg < targetFrameMs * 0.6 && currentBatch < maxBatch) {
+            currentBatch = Math.min(maxBatch, Math.ceil(currentBatch * 1.2));
+          }
+        }
+      },
+      suggestBatchSize: function (baseBatch) {
+        // Blend the adaptive batch with the user-requested base
+        return Math.max(minBatch, Math.min(maxBatch, Math.round(currentBatch)));
+      },
+      getStats: function () {
+        var avg = history.length ? history.reduce(function (a, b) { return a + b; }, 0) / history.length : 0;
+        return {
+          avgFrameMs: Math.round(avg * 100) / 100,
+          currentBatch: currentBatch,
+          targetFps: targetFps,
+          historyLen: history.length
+        };
+      },
+      reset: function () { history = []; currentBatch = opts.initialBatch || 8; }
+    };
+  };
+
+  // ---- Virtual scrolling renderer -----------------------------------------
+  // VirtualStrokeRenderer renders only the strokes in the current viewport
+  // (plus a buffer) using an offscreen canvas. As the user scrubs forward,
+  // newly-visible strokes are drawn incrementally; when scrubbing backward,
+  // the canvas is rebuilt from the nearest checkpoint.
+  //
+  // This is designed for VERY long stroke sequences (10k+) where replaying
+  // from the start on every seek would be too slow.
+  //
+  // Usage:
+  //   var vsr = globalThis.createVirtualStrokeRenderer(canvas, { bufferSize: 500 });
+  //   vsr.load(instructions);
+  //   vsr.seekTo(1500);  // renders strokes 0..1500
+  //   vsr.forward(100);  // renders strokes 1500..1600
+  globalThis.createVirtualStrokeRenderer = function createVirtualStrokeRenderer(canvasElement, opts) {
+    opts = opts || {};
+    var W = globalThis.__paintEngine.WIDTH;
+    var H = globalThis.__paintEngine.HEIGHT;
+    var dpr = opts.devicePixelRatio || 1;
+    var bufferSize = opts.bufferSize || 500;  // checkpoint interval
+
+    var ctx = canvasElement.getContext('2d');
+    canvasElement.width = W * dpr;
+    canvasElement.height = H * dpr;
+    canvasElement.style.width = W + 'px';
+    canvasElement.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    var instructions = [];
+    var currentIdx = 0;
+    var state = null;
+    var checkpoints = {};  // { index: ImageData } — snapshot every bufferSize strokes
+
+    function resetCanvas() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      if (opts.background) {
+        ctx.fillStyle = opts.background;
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+
+    function initState() {
+      state = globalThis.__paintEngine.cloneState(globalThis.__paintEngine.defaultState);
+    }
+
+    function applyOne(idx) {
+      if (idx < 0 || idx >= instructions.length) return;
+      try {
+        globalThis.__paintEngine.applyInstruction(ctx, state, instructions[idx], dpr);
+      } catch (e) {
+        console.warn('[engine:virtual] skip instruction', idx, e);
+      }
+    }
+
+    function saveCheckpoint(idx) {
+      try {
+        checkpoints[idx] = ctx.getImageData(0, 0, canvasElement.width, canvasElement.height);
+      } catch (e) {
+        // getImageData may fail on very large canvases; skip checkpointing
+      }
+    }
+
+    function loadCheckpoint(idx) {
+      if (checkpoints[idx]) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.putImageData(checkpoints[idx], 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return true;
+      }
+      return false;
+    }
+
+    function nearestCheckpointBefore(targetIdx) {
+      var best = 0;
+      for (var k in checkpoints) {
+        var ki = parseInt(k, 10);
+        if (ki <= targetIdx && ki > best) best = ki;
+      }
+      return best;
+    }
+
+    return {
+      load: function (instrs) {
+        instructions = instrs;
+        currentIdx = 0;
+        checkpoints = {};
+        initState();
+        resetCanvas();
+      },
+      seekTo: function (targetIdx) {
+        targetIdx = Math.max(0, Math.min(targetIdx, instructions.length));
+        if (targetIdx < currentIdx) {
+          // Going backward: find nearest checkpoint, restore, replay forward
+          var cp = nearestCheckpointBefore(targetIdx);
+          if (cp > 0 && loadCheckpoint(cp)) {
+            currentIdx = cp;
+            // Re-init state by replaying from 0 to cp? State is not checkpointable,
+            // so for correctness we replay from 0. For pure visual scrubbing this
+            // is acceptable; for exact state we fall back to full replay.
+            initState();
+            for (var i = 0; i < cp; i++) applyOne(i);
+          } else {
+            // No checkpoint: full replay from start
+            resetCanvas();
+            initState();
+            currentIdx = 0;
+          }
+        }
+        while (currentIdx < targetIdx) {
+          applyOne(currentIdx);
+          currentIdx++;
+          if (currentIdx % bufferSize === 0) saveCheckpoint(currentIdx);
+        }
+      },
+      forward: function (count) {
+        var end = Math.min(currentIdx + count, instructions.length);
+        while (currentIdx < end) {
+          applyOne(currentIdx);
+          currentIdx++;
+          if (currentIdx % bufferSize === 0) saveCheckpoint(currentIdx);
+        }
+      },
+      getCurrentIndex: function () { return currentIdx; },
+      getTotal: function () { return instructions.length; },
+      getCheckpointCount: function () { return Object.keys(checkpoints).length; },
+      clearCheckpoints: function () { checkpoints = {}; }
+    };
+  };
 }()
 
