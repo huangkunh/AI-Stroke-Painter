@@ -5,11 +5,23 @@
 本项目基于强化学习模型 [Learning-to-Paint](https://github.com/hzwer/ICCV2019-LearningToPaint)（ICCV 2019），实现了一条完整的 **图片 → AI 笔画推理 → 数据转换 → 浏览器逐笔回放** 管线。
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-optional-orange.svg)](https://pytorch.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/huangkunh/AI-Stroke-Painter/actions/workflows/ci.yml/badge.svg)](https://github.com/huangkunh/AI-Stroke-Painter/actions)
 
 > 🌐 **在线 Demo**: [https://ai-stroke-painter.vercel.app](https://ai-stroke-painter.vercel.app) （部署后可访问）
+
+## 🧠 神经渲染系统（新）
+
+本项目现已实现接近 Learning-to-Paint 论文的完整深度学习架构：
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| **可微分渲染器** | `model/differentiable_renderer.py` | 15维笔画参数化，贝塞尔曲线+高斯泼溅，支持梯度反向传播 |
+| **DDPG智能体** | `model/ddpg_agent.py` | Actor-Critic架构，LSTM时序推理，经验回放，OUNoise探索 |
+| **训练系统** | `data/dataset.py` | 图像数据集，SSIM/LPIPS奖励函数，完整训练循环 |
+| **分层策略** | `model/hierarchical_painter.py` | 4层绘画（粗略/中等/精细/调整），模拟人类画家 |
+| **评估系统** | `model/evaluation.py` | SSIM/LPIPS/MSE/PSNR指标，训练/绘画可视化 |
 
 ---
 
