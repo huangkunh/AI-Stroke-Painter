@@ -328,19 +328,40 @@
         progressFill.style.width = (total > 0 ? done / total * 100 : 0) + '%';
       }
 
+      // ---- Adaptive frame-rate controller (from engine.js) ----
+      // Created lazily on first playback; measures actual render time per
+      // frame and dynamically adjusts the batch size so playback stays near
+      // 60 FPS on high-end devices and degrades gracefully on low-end ones.
+      let afc = null;
+      function ensureAFC() {
+        if (!afc && globalThis.createAdaptiveFrameRate) {
+          afc = globalThis.createAdaptiveFrameRate({
+            targetFps: 60, minBatch: 1, maxBatch: 64, initialBatch: 8
+          });
+        }
+        return afc;
+      }
+
       // ---- Speed -> batch size mapping ----
       // At 60fps, 1x = ~8 instructions/frame, 0.5x = 4, 2x = 16, 4x = 32.
       // We also throttle 0.5x by skipping every other frame.
+      // When AFC is active, it overrides the base batch with its adaptive value.
       function getBatchSize() {
         const speed = parseFloat(speedSelect.value);
-        return Math.max(1, Math.round(8 * speed));
+        const base = Math.max(1, Math.round(8 * speed));
+        if (afc) {
+          // Blend: use AFC's suggestion but scale by user speed
+          const adaptive = afc.suggestBatchSize(base);
+          return Math.max(1, Math.round(adaptive * speed));
+        }
+        return base;
       }
       function getFrameInterval(speed) {
         // 0.5x -> apply every 120ms (skip frames), 1x+ -> every frame
         return speed <= 0.5 ? 120 : 16;
       }
 
-      // ---- Animation loop ----
+      // ---- Animation loop (with adaptive frame rate) ----
       function tick(ts) {
         if (!isPlaying) return;
         const speed    = parseFloat(speedSelect.value);
@@ -351,6 +372,7 @@
         }
         lastFrameTs = ts;
 
+        const frameStart = performance.now();
         const batch   = getBatchSize();
         const end     = Math.min(currentIdx + batch, instructions.length);
         for (; currentIdx < end; currentIdx++) {
@@ -358,6 +380,10 @@
         }
         if (showGrid) drawGrid();
         updateStatus('Playing');
+
+        // Record frame duration for adaptive frame-rate control
+        const frameDuration = performance.now() - frameStart;
+        if (afc) afc.recordFrame(frameDuration);
 
         if (currentIdx >= instructions.length) {
           // Reached the end
@@ -374,6 +400,8 @@
           // Already finished -> reset first
           doReset();
         }
+        ensureAFC();  // initialise adaptive frame-rate controller
+        if (afc) afc.reset();
         isPlaying = true;
         playPauseBtn.textContent = '⏸ 暂停';
         stepBtn.disabled = true;
@@ -587,6 +615,7 @@
         exportPNG: exportPNG,
         stepToIndex: stepToIndex,
         getInstructions: () => instructions,
+        getAFCStats: () => afc ? afc.getStats() : null,
         getState: () => ({
           currentIdx,
           total: instructions.length,
