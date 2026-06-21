@@ -54,7 +54,7 @@ class TestDifferentiableRenderer(unittest.TestCase):
         """Output should be in [0, 1] range."""
         renderer = self.build_renderer(canvas_size=32, num_samples=8)
         canvas = self.torch.zeros(1, 3, 32, 32)
-        action = self.torch.randn(1, self.DEFAULT_ACTION_DIM)
+        action = self.torch.tanh(self.torch.randn(1, self.DEFAULT_ACTION_DIM))  # clamp to [-1, 1]
         out = renderer(canvas, action)
         self.assertTrue(out.min() >= -0.01, f"min {out.min()} < 0")
         self.assertTrue(out.max() <= 1.01, f"max {out.max()} > 1")
