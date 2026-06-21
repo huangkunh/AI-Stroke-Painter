@@ -426,6 +426,8 @@ python -m http.server 8000
 | `sample_anime.png` | 动漫 | illustration |
 | `sample_bird.png` | 动物 | illustration |
 | `sample_flower.png` | 花卉 | illustration |
+| `sample_geometric.png` | 几何 | illustration |
+| `sample_underwater.png` | 水下 | illustration |
 | `sample_cat_lowres.png` | 低分辨率猫图 | photo |
 
 ---
