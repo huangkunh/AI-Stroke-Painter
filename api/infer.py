@@ -98,6 +98,41 @@ def _get_client_ip(event_or_request: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Warm-up: pre-import heavy dependencies at module load time (cold start)
+# ---------------------------------------------------------------------------
+# Serverless functions suffer from cold-start latency when the Python runtime
+# must import numpy, PIL, cv2, and the inference module for the first time.
+# By importing them at module level (which runs during cold start, before the
+# first request is handled), we move that cost out of the request path.
+_warmup_done = False
+_warmup_error = None
+
+def _warmup():
+    """Pre-import heavy modules to reduce first-request latency."""
+    global _warmup_done, _warmup_error
+    if _warmup_done:
+        return
+    try:
+        import numpy as np  # noqa: F401
+        from PIL import Image  # noqa: F401
+        import cv2  # noqa: F401
+        import inference as inf  # noqa: F401
+        # Touch the lite inference path with a tiny image to JIT-compile
+        # the cv2.kmeans / Canny code paths.
+        _tiny = np.zeros((32, 32, 3), dtype=np.float32)
+        _tiny[:16, :16] = [0.8, 0.2, 0.1]
+        _tiny[16:, 16:] = [0.1, 0.8, 0.2]
+        inf.run_lite_inference(_tiny, max_steps=5)
+        _warmup_done = True
+    except Exception as e:
+        _warmup_error = str(e)
+        # Don't raise; the actual request will fail with a clearer error.
+
+# Run warmup at module import (cold start)
+_warmup()
+
+
+# ---------------------------------------------------------------------------
 # Core inference logic
 # ---------------------------------------------------------------------------
 
