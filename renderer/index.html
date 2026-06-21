@@ -323,8 +323,14 @@
         const total = instructions.length;
         const done  = currentIdx;
         const pct   = total > 0 ? (done / total * 100).toFixed(1) : '0.0';
-        statusDiv.textContent =
-          `Progress: ${done} / ${total} (${pct}%)  |  ${label}`;
+        let text = `Progress: ${done} / ${total} (${pct}%)  |  ${label}`;
+        // Append AFC stats during playback for performance visibility
+        if (afc && isPlaying) {
+          const stats = afc.getStats();
+          const fps = stats.avgFrameMs > 0 ? Math.round(1000 / stats.avgFrameMs) : 0;
+          text += `  |  ~${fps}fps batch=${stats.currentBatch}`;
+        }
+        statusDiv.textContent = text;
         progressFill.style.width = (total > 0 ? done / total * 100 : 0) + '%';
       }
 
