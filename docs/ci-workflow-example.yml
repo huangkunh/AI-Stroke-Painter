@@ -48,6 +48,12 @@ jobs:
       - name: Run API tests
         run: python -m unittest tests.test_api -v
 
+      - name: Run dedup tests
+        run: python -m unittest tests.test_dedup -v
+
+      - name: Run warmup & config tests
+        run: python -m unittest tests.test_warmup -v
+
   # ---------------------------------------------------------------------------
   # Job 2: Performance tests (only on Python 3.11)
   # ---------------------------------------------------------------------------
