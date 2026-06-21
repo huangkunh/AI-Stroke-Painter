@@ -63,12 +63,18 @@ class TestDifferentiableRenderer(unittest.TestCase):
         """Gradients should flow through the renderer to the action."""
         renderer = self.build_renderer(canvas_size=32, num_samples=8)
         canvas = self.torch.zeros(1, 3, 32, 32)
-        action = self.torch.randn(1, self.DEFAULT_ACTION_DIM, requires_grad=True)
+        # Use a non-zero action to ensure gradient flows
+        action = self.torch.zeros(1, self.DEFAULT_ACTION_DIM, requires_grad=True)
+        # Set color channels to non-zero so there's something to paint
+        with self.torch.no_grad():
+            action.data[0, 4:8] = 0.5  # color + alpha
+            action.data[0, 8] = 0.3    # radius
         out = renderer(canvas, action)
         loss = out.sum()
         loss.backward()
         self.assertIsNotNone(action.grad, "No gradient on action")
-        self.assertFalse(self.torch.all(action.grad == 0), "Gradient is all zeros")
+        # At least some gradient components should be non-zero
+        self.assertGreater(action.grad.abs().sum().item(), 0, "Gradient is all zeros")
 
     def test_render_sequence(self):
         """render_sequence should return final canvas and intermediates."""
