@@ -11,17 +11,35 @@
 
 > 🌐 **在线 Demo**: [https://ai-stroke-painter.vercel.app](https://ai-stroke-painter.vercel.app) （部署后可访问）
 
-## 🧠 神经渲染系统（新）
+## 🧠 神经渲染系统
 
 本项目现已实现接近 Learning-to-Paint 论文的完整深度学习架构：
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
-| **可微分渲染器** | `model/differentiable_renderer.py` | 15维笔画参数化，贝塞尔曲线+高斯泼溅，支持梯度反向传播 |
+| **增强渲染器** | `model/enhanced_renderer.py` | 20维参数化(几何+外观+动态+材质)，材质交互模拟，批量渲染 |
 | **DDPG智能体** | `model/ddpg_agent.py` | Actor-Critic架构，LSTM时序推理，经验回放，OUNoise探索 |
+| **优先回放** | `model/prioritized_replay.py` | SumTree优先回放，多维度奖励(SSIM+LPIPS+颜色+边缘)，训练稳定性 |
 | **训练系统** | `data/dataset.py` | 图像数据集，SSIM/LPIPS奖励函数，完整训练循环 |
+| **注意力绘画** | `model/attention_painter.py` | 5层绘画(全局/区域/局部/细节/调整)，空间注意力，5种风格模板 |
 | **分层策略** | `model/hierarchical_painter.py` | 4层绘画（粗略/中等/精细/调整），模拟人类画家 |
-| **评估系统** | `model/evaluation.py` | SSIM/LPIPS/MSE/PSNR指标，训练/绘画可视化 |
+| **增强评估** | `model/enhanced_evaluation.py` | FSIM+颜色分布+边缘保持+绘画特征+A/B测试框架 |
+| **模型压缩** | `model/model_compression.py` | 动态/静态量化，幅值/结构化剪枝，JIT编译，性能基准 |
+
+### 绘画模式
+
+```bash
+# 基础模式（启发式）
+python model/inference.py --image input.jpg --mode lite
+
+# 分层模式（4层策略）
+python model/inference.py --image input.jpg --mode hierarchical
+
+# 注意力模式（5层+注意力+风格支持）
+python model/inference.py --image input.jpg --mode attention --style oil
+```
+
+支持的风格：`default` | `oil` | `watercolor` | `sketch` | `anime`
 
 ---
 
