@@ -311,8 +311,8 @@ class AttentionHierarchicalPainter:
             ex = min(1.0, max(0.0, px / w + dx))
             ey = min(1.0, max(0.0, py / h + dy))
             strokes.append({
-                "x_start": px / w, "y_start": py / h,
-                "x_end": ex, "y_end": ey,
+                "x_start": float(px) / w, "y_start": float(py) / h,
+                "x_end": float(ex), "y_end": float(ey),
                 "color_r": float(r), "color_g": float(g), "color_b": float(b),
                 "color_a": config['alpha'],
                 "brush_radius": config['radius'],
@@ -350,8 +350,8 @@ class AttentionHierarchicalPainter:
             ex = min(1.0, max(0.0, sx / w + tx * length))
             ey = min(1.0, max(0.0, sy / h + ty * length))
             strokes.append({
-                "x_start": sx / w, "y_start": sy / h,
-                "x_end": ex, "y_end": ey,
+                "x_start": float(sx) / w, "y_start": float(sy) / h,
+                "x_end": float(ex), "y_end": float(ey),
                 "color_r": float(r), "color_g": float(g), "color_b": float(b),
                 "color_a": config['alpha'],
                 "brush_radius": config['radius'],
@@ -384,8 +384,8 @@ class AttentionHierarchicalPainter:
             ex = min(1.0, max(0.0, sx / w + dx))
             ey = min(1.0, max(0.0, sy / h + dy))
             strokes.append({
-                "x_start": sx / w, "y_start": sy / h,
-                "x_end": ex, "y_end": ey,
+                "x_start": float(sx) / w, "y_start": float(sy) / h,
+                "x_end": float(ex), "y_end": float(ey),
                 "color_r": float(r), "color_g": float(g), "color_b": float(b),
                 "color_a": config['alpha'],
                 "brush_radius": config['radius'],

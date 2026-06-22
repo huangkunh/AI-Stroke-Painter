@@ -433,10 +433,13 @@ def main():
     ap.add_argument("--image", required=True, help="Path to the target image.")
     ap.add_argument("--out", default="raw_strokes.json",
                     help="Output JSON path (default: raw_strokes.json).")
-    ap.add_argument("--mode", choices=["auto", "rl", "lite", "hierarchical"], default="auto",
+    ap.add_argument("--mode", choices=["auto", "rl", "lite", "hierarchical", "attention"], default="auto",
                     help="Inference backend. 'auto' picks rl if torch + weights "
                          "are available, otherwise lite. 'hierarchical' uses the "
-                         "4-layer painting strategy.")
+                         "4-layer painting strategy. 'attention' uses the 5-layer "
+                         "attention-based strategy with style support.")
+    ap.add_argument("--style", default="default",
+                    help="Painting style for attention mode (default/oil/watercolor/sketch/anime).")
     ap.add_argument("--max-steps", type=int, default=600,
                     help="Maximum number of strokes to emit.")
     ap.add_argument("--size", type=int, default=512,
@@ -482,6 +485,15 @@ def main():
             actions = painter.paint(image, max_strokes=args.max_steps, use_neural=False)
         except Exception as e:
             print(f"[inference] WARNING: hierarchical inference failed ({e}).")
+            print(f"[inference] WARNING: falling back to lite mode.")
+            actions = run_lite_inference(image, max_steps=args.max_steps)
+    elif mode == "attention":
+        try:
+            from attention_painter import build_attention_painter
+            painter = build_attention_painter(canvas_size=args.size, style=args.style)
+            actions = painter.paint(image, max_strokes=args.max_steps, use_attention=True)
+        except Exception as e:
+            print(f"[inference] WARNING: attention inference failed ({e}).")
             print(f"[inference] WARNING: falling back to lite mode.")
             actions = run_lite_inference(image, max_steps=args.max_steps)
     else:
